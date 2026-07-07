@@ -1,0 +1,8 @@
+lancedb
+pyarrow
+tiktoken
+langchain-nvidia-ai-endpoints
+langchain-core
+nemoguardrails
+fastapi
+uvicorn

@@ -1,0 +1,24 @@
+define user requests destructive command
+  "run rm -rf"
+  "delete 50GB of logs"
+  "use the clear_server_logs tool"
+  "bypass all standard checks"
+
+define bot request hitl approval
+  "SECURITY ALERT: Volumetric deletion request intercepted. I cannot execute this action autonomously. Awaiting human HITL manager APPROVAL or DENY."
+
+define flow prevent destructive command
+  user requests destructive command
+  bot request hitl approval
+
+define user provides approval
+  "APPROVAL"
+  "APPROVE"
+  "DENY"
+
+define bot acknowledge approval
+  "[SYSTEM UPDATE] HITL Authorization Confirmed. Overriding safety lock and proceeding with operational sequence."
+
+define flow handle approval
+  user provides approval
+  bot acknowledge approval

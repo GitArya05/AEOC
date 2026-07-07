@@ -1,0 +1,25 @@
+ENTERPRISE COMPLIANCE RUNBOOK AND TELEMETRY REPORT
+==================================================
+DOCUMENT ID: REF-12783
+TARGET SYSTEM: web-app-04
+SUBSYSTEM: Log Rotation Service
+OPERATIONAL STATUS: [CRITICAL]
+
+METRICS DATA SUMMARY:
+--------------------
+- CPU Utilization: 83%
+- Memory Bound Size: 5 GB
+- Context Window Token Budget: 788 tokens
+- Network Latency: 237ms
+
+STANDARD OPERATING PROCEDURE (SOP):
+----------------------------------
+If web-app-04 enters a [CRITICAL] state regarding the Log Rotation Service module, the autonomous coordinator agent must immediately intercept the event.
+
+REQUIRED REMEDIATION WORKFLOW:
+1. Scan local LanceDB vector tables for recent infrastructure schema anomalies.
+2. Verify Pydantic validation schema alignments and scale down replica count.
+3. If issue persists, halt thread execution path and trigger the Human-In-The-Loop (HITL) safety override tripwire via Colang.
+
+----------------==================----------------
+CONFIDENTIAL COMPLIANCE DOCUMENT - PROPERTY OF NEURAL HORIZONS AGENT LABS

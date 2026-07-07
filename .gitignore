@@ -1,0 +1,16 @@
+# Security
+.env
+
+# Database
+lancedb_data/
+*.lancedb/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
