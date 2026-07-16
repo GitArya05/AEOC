@@ -4,16 +4,13 @@ import asyncio
 import logging
 from dotenv import load_dotenv
 
-# 1. EARLY ENVIRONMENT INITIALIZATION
 # Load .env explicitly before initializing any vector schemas or cloud endpoints
 load_dotenv()
 
-# 2. WINDOWS ASYNC EVENT LOOP PATCH
 # Prevents unhandled exceptions related to asyncio or ProactorEventLoop on Windows
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-# 3. INTERNAL BRAIN LOGGING
 # Turn on internal brain logs to physically view the NeMo Guardrails thought process
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,22 +18,17 @@ logger = logging.getLogger(__name__)
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from nemoguardrails import LLMRails, RailsConfig
 # Import custom tools and databases (assuming these exist in your repository)
-# from actions import check_disk_space, clear_server_logs 
-# from init_db import LanceDBRetriever 
 
 class CoordinatorAgent:
     def __init__(self):
         logger.info("Initializing Autonomous Enterprise Operations Coordinator...")
         
-        # 4. THE OOP AND TIMEOUT FIX
-        # Bound to 'self' to fix AttributeError.
         # Added timeout=120.0 to prevent 60-second aggressive background socket drops.
         self.llm = ChatNVIDIA(
             model="meta/llama3-70b-instruct",
             timeout=120.0 
         )
         
-        # 5. PYDANTIC VALIDATION FIX 
         # Explicit string scalar configurations to prevent dictionary schema mismatches
         self.system_prompt = (
             "You are an autonomous enterprise IT operations coordinator. "
