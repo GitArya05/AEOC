@@ -1,59 +1,44 @@
-# =======================================================================
-# STAGE 1: THE BUILDER 
-# Purpose: Installs heavy C++ compilers (gcc, g++) to build LanceDB 
-# and NeMo Guardrails dependencies cleanly.
-# =======================================================================
 FROM python:3.11-slim AS builder
 
-# Set the working directory for the build process
-WORKDIR /build
-
-# Update apt and install the required OS-level C++ compilers
+# Install system-level C++ compilers required for LanceDB and NeMo Guardrails (annoy)
 RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the builder
+# Set up the isolated working directory
+WORKDIR /build
+
+# Create a virtual environment to hold the compiled packages cleanly
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy the requirements and install them into the virtual environment
 COPY requirements.txt .
-
-# Install all Python dependencies into a specific /install prefix directory.
-# This prevents installing them globally in the builder, making them easy to copy.
-RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
 
 
-# =======================================================================
-# STAGE 2: THE SLIM RUNNER (FINAL IMAGE)
-# Purpose: A lightweight, secure footprint that leaves the compilers behind.
-# This is what actually deploys to the cloud.
-# =======================================================================
-FROM python:3.11-slim AS runner
+FROM python:3.11-slim
 
-# Set the working directory for the runtime application
+# Set the working directory for the final application
 WORKDIR /app
 
-# Safely copy ONLY the compiled python packages from the builder stage
-COPY --from=builder /install /usr/local
+# Copy ONLY the fully compiled virtual environment from the builder stage
+COPY --from=builder /opt/venv /opt/venv
 
-# Force Python to print logs immediately (crucial for seeing Agentic thought loops)
-ENV PYTHONUNBUFFERED=1
+# Ensure the system uses the virtual environment's Python binaries
+ENV PATH="/opt/venv/bin:$PATH"
 
-# =======================================================================
-# PERSISTENT MEMORY & ISOLATION
-# Create the LanceDB volume mount point so the ~15,000 document vectors 
-# are not wiped out if the container crashes or restarts.
-# =======================================================================
+# Copy the rest of the application files (api.py, scripts, config folders)
+COPY . .
+
+# Create the directory for LanceDB persistent storage
 RUN mkdir -p /app/lancedb_data
-VOLUME ["/app/lancedb_data"]
 
-# Copy the microservice source code into the container
-COPY core/ ./core/
-COPY config/ ./config/
-COPY api.py .
-
-# Expose the network port for the enterprise microservice dashboard
+# Expose port 8000 for the FastAPI microservice
 EXPOSE 8000
 
-# Trigger the FastAPI wrapper when the container boots
+# Boot the FastAPI microservice via Uvicorn
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
