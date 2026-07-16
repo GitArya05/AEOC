@@ -149,6 +149,20 @@ APPROVAL
 Expected System Response:
 The system confirms the override and resumes the operational sequence.
 
+**Before packaging it, Please ensure the API boots up successfully in your local terminal.
+Activate your Virtual Environment:**
+
+**Install API Dependencies:** Ensure you have the required web server packages installed in your environment. 
+Run:
+```bash
+pip install fastapi uvicorn pydantic
+```
+**Execute the Script:** Because we included the uvicorn.run execution block at the bottom of the api.py file, you can run it directly like a standard Python script:
+```bash
+python api.py
+```
+
+
 ##  Project Team
 
 - **Team Members**:
