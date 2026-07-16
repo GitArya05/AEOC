@@ -155,7 +155,7 @@ The system confirms the override and resumes the operational sequence.
 -  Arya Urkunde
   (RAG & Data Engineering): Architected data chunking, LanceDB vectorization, and the Guardrails HITL security firewall. 
 -  Om Bhattalwar
-  (Cloud & Deployment Architecture): Engineered the multi-stage containerized infrastructure, ensuring high-performance execution and secure, isolated microservice deployment.
+  (Cloud & Deployment Architecture): Engineered the multi-stage containerized infrastructure, ensuring high-performance execution.
 - **Project Guide**: Simran  
 
 
