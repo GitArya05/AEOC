@@ -115,7 +115,7 @@ docker run -p 8000:8000 --env-file .env -v $(pwd)/lancedb_data:/app/lancedb_data
 ```
 Note: The LanceDB data directory is mounted as a volume to ensure database persistence across container lifecycles and restarts.
 
-## 🧪 Verification & Pressure Testing
+##  Verification & Pressure Testing
 
 To verify the operational readiness of the NeMo Guardrails and Boundary HITL protocols, execute the following sequences.
 
