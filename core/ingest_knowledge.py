@@ -1,4 +1,3 @@
-# 1. EARLY ENVIRONMENT INITIALIZATION
 from dotenv import load_dotenv
 load_dotenv()  # Must be on line 1 to catch NVAPI_KEY before schema initialization
 
