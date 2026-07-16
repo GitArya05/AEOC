@@ -1,84 +1,135 @@
-import os
-import lancedb
+# 1. EARLY ENVIRONMENT INITIALIZATION
 from dotenv import load_dotenv
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+load_dotenv()  # Must be on line 1 to catch NVAPI_KEY before schema initialization
+
+import os
+import time
+import logging
+import pyarrow as pa
+import lancedb
 from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
-from pipeline_validator import validate_synthetic_payload 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-print("=== NEURAL HORIZONS: ENTERPRISE INGESTION PIPELINE ===")
+# Configure internal logging to monitor the batching pipeline
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
-# 1. Secure API Key Loading (Enterprise Standard)
-load_dotenv()
-api_key = os.getenv("NVIDIA_API_KEY")
+# 2. CONFIGURATION & THRESHOLDS
+LANCEDB_PATH = os.getenv("LANCEDB_PATH", "./lancedb_data")
+TABLE_NAME = "enterprise_runbooks"
+BATCH_SIZE = 500  # Crucial: Prevents Out-Of-Memory (OOM) crashes during the 15k file load
 
-if not api_key:
-    raise ValueError("[CRITICAL] NVIDIA_API_KEY not found. Please ensure your .env file is set up correctly.")
-
-print("[INFO] Booting NVIDIA NIM Embedding connection...")
-embedder = NVIDIAEmbeddings(
-    model="nvidia/nv-embedqa-e5-v5",
-    nvidia_api_key=api_key,
-    truncate="END"
-)
-
-# Boot LanceDB
-db = lancedb.connect("./lancedb_data")
-
-# 2. Read the Synthetic Data Stream
-source_dir = "raw_documentation"
-if not os.path.exists(source_dir):
-    raise FileNotFoundError(f"[CRITICAL] Folder '{source_dir}' not found. Run generate_synthetic_data.py first.")
-
-all_files = [f for f in os.listdir(source_dir) if f.endswith('.txt')]
-files_to_process = all_files[:50] 
-print(f"[INFO] Routing {len(files_to_process)} raw files through the Pydantic Shield...")
-
-valid_documents = []
-
-# 3. Validation Phase
-for filename in files_to_process:
-    filepath = os.path.join(source_dir, filename)
-    with open(filepath, "r", encoding="utf-8") as f:
-        raw_text = f.read()
+class KnowledgeIngestor:
+    def __init__(self):
+        logger.info("Initializing LanceDB Data Engine...")
+        # Connect to the local/volume-mounted LanceDB instance
+        self.db = lancedb.connect(LANCEDB_PATH)
         
-    doc_id = filename.replace(".txt", "")
-    
-    raw_payload = {
-        "document_id": doc_id,
-        "text_content": raw_text,
-        "doc_type": "LOG" if "REPORT" in filename else "SOP",
-        "source_stream_id": 14 
-    }
-    
-    validated_doc = validate_synthetic_payload(raw_payload)
-    
-    if validated_doc:
-        valid_documents.append(validated_doc)
+        # Initialize NVIDIA's high-performance embedding model
+        try:
+            self.embedder = NVIDIAEmbeddings(model="NV-Embed-QA")
+            logger.info("NVIDIA NIM Embedding engine connected successfully.")
+        except Exception as e:
+            logger.error(f"[CRITICAL] Failed to authenticate NVIDIA Embeddings. Check NVAPI_KEY: {e}")
+            raise
 
-print(f"\n[STATUS] Shield caught {(len(files_to_process) - len(valid_documents))} malformed payloads.")
-print(f"[STATUS] Pushing {len(valid_documents)} clean documents into the embedding queue...\n")
+        # 3. DUAL-TIER CHUNKING STRATEGY (Arya's Architecture)
+        # 512 tokens for dense SOPs to prevent context hallucination
+        self.sop_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=512, 
+            chunk_overlap=50
+        )
+        # 1024 tokens for API Schemas to preserve JSON/Code structures
+        self.api_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1024, 
+            chunk_overlap=100
+        )
 
-# 4. Chunking & Bulk Embedding Phase
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=50)
-all_rows = []
+    def define_schema(self):
+        """Defines the PyArrow schema required for LanceDB vector storage."""
+        # Assuming NV-Embed-QA outputs 1024-dimensional vectors. 
+        # Adjust 'list_size' if using a different embedding model size.
+        return pa.schema([
+            pa.field("vector", pa.list_(pa.float32(), 1024)),
+            pa.field("text", pa.string()),
+            pa.field("document_type", pa.string()),
+            pa.field("source", pa.string())
+        ])
 
-for doc in valid_documents:
-    chunks = text_splitter.split_text(doc.text_content)
-    
-    for chunk_text in chunks:
-        vector = embedder.embed_query(chunk_text)
+    def process_and_ingest(self, document_payloads):
+        """
+        Processes raw document dictionaries, chunks them, generates embeddings, 
+        and writes them to LanceDB in optimized batches.
+        """
+        schema = self.define_schema()
         
-        all_rows.append({
-            "vector": vector,
-            "text": chunk_text,
-            "source": doc.document_id,
-            "type": doc.doc_type
-        })
-        
-    print(f"[SUCCESS] Processed chunks for {doc.document_id}.")
+        # Create or open the table
+        if TABLE_NAME not in self.db.table_names():
+            table = self.db.create_table(TABLE_NAME, schema=schema)
+            logger.info(f"Created new LanceDB table: {TABLE_NAME}")
+        else:
+            table = self.db.open_table(TABLE_NAME)
+            logger.info(f"Opened existing LanceDB table: {TABLE_NAME}")
 
-# 🚀 THE FIX: Bulk overwrite forces LanceDB to accept the new schema
-table = db.create_table("enterprise_knowledge", data=all_rows, mode="overwrite")
+        total_docs = len(document_payloads)
+        logger.info(f"Starting ingestion pipeline for {total_docs} documents...")
 
-print("\n=== INGESTION COMPLETE ===")
-print(f"Total new vector rows appended to LanceDB: {len(all_rows)}")
+        # 4. MEMORY-SAFE BATCH PROCESSING
+        for i in range(0, total_docs, BATCH_SIZE):
+            batch = document_payloads[i:i + BATCH_SIZE]
+            rows_to_insert = []
+
+            logger.info(f"Processing Batch {i // BATCH_SIZE + 1} (Documents {i} to {i + len(batch)})...")
+            
+            for doc in batch:
+                # Select the appropriate chunking strategy based on metadata
+                if doc.get("type") == "API_SCHEMA":
+                    chunks = self.api_splitter.split_text(doc["content"])
+                else:
+                    chunks = self.sop_splitter.split_text(doc["content"])
+
+                # Generate embeddings for the chunks via NVIDIA NIM
+                try:
+                    embeddings = self.embedder.embed_documents(chunks)
+                    
+                    # Map chunks to the PyArrow schema structure
+                    for chunk_text, embedding in zip(chunks, embeddings):
+                        rows_to_insert.append({
+                            "vector": embedding,
+                            "text": chunk_text,
+                            "document_type": doc.get("type", "SOP"),
+                            "source": doc.get("source", "unknown")
+                        })
+                except Exception as e:
+                    logger.warning(f"Failed to embed document {doc.get('source')}: {e}")
+                    continue
+
+            # Push the compiled batch to the local LanceDB disk
+            if rows_to_insert:
+                table.add(rows_to_insert)
+                logger.info(f"Successfully wrote {len(rows_to_insert)} vectorized chunks to disk.")
+                time.sleep(0.5) # Slight throttle to prevent API rate limiting
+
+        logger.info("✅ Ingestion Pipeline Complete. Database is ready for Retrieval (RAG).")
+
+if __name__ == "__main__":
+    # --- MOCK DATA GENERATION FOR LOCAL TESTING ---
+    # In production, this would read your ~15,000 synthetic files from a directory
+    logger.info("Loading dummy compliance and telemetry data for pipeline test...")
+    
+    mock_documents = [
+        {
+            "content": "SOP for db-server-01: If storage exceeds 95%, execute clear_server_logs tool immediately.",
+            "type": "SOP",
+            "source": "manuals/db_operations.txt"
+        },
+        {
+            "content": "API Schema for network_router: {\"endpoint\": \"/api/v1/reset\", \"method\": \"POST\", \"auth\": \"required\"}",
+            "type": "API_SCHEMA",
+            "source": "schemas/network_api.json"
+        }
+    ] * 250 # Multiplying to simulate a batch of 500 documents
+
+    # Execute Pipeline
+    ingestor = KnowledgeIngestor()
+    ingestor.process_and_ingest(mock_documents)
