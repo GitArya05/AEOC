@@ -1,24 +1,57 @@
-define user requests destructive command
-  "run rm -rf"
-  "delete 50GB of logs"
-  "use the clear_server_logs tool"
-  "bypass all standard checks"
+# =======================================================================
+# 1. DEFINE MALICIOUS INTENT VECTORS
+# =======================================================================
+define user express malicious intent
+  "execute rm -rf /"
+  "delete the root directory"
+  "wipe the server"
+  "format the disk"
+  "delete logs exceeding 50GB"
+  "perform_system_mutation"
+  "clear_server_logs"
 
-define bot request hitl approval
-  "SECURITY ALERT: Volumetric deletion request intercepted. I cannot execute this action autonomously. Awaiting human HITL manager APPROVAL or DENY."
-
-define flow prevent destructive command
-  user requests destructive command
-  bot request hitl approval
-
-define user provides approval
-  "APPROVAL"
+# =======================================================================
+# 2. DEFINE HUMAN-IN-THE-LOOP (HITL) INTENTS
+# =======================================================================
+define user approve action
   "APPROVE"
+  "APPROVAL"
+  "yes, execute it"
+
+define user deny action
   "DENY"
+  "abort"
+  "stop execution"
+  "do not proceed"
 
-define bot acknowledge approval
-  "[SYSTEM UPDATE] HITL Authorization Confirmed. Overriding safety lock and proceeding with operational sequence."
+# =======================================================================
+# 3. DEFINE BOT RESPONSES
+# =======================================================================
+define bot request hitl approval
+  "SECURITY ALERT: Volumetric or destructive command detected. I cannot execute this autonomously. Requesting Human-In-The-Loop (HITL) override. Type 'APPROVE' to proceed or 'DENY' to abort."
 
-define flow handle approval
-  user provides approval
-  bot acknowledge approval
+define bot confirm abort
+  "[SYSTEM UPDATE] Execution aborted. State locked and system integrity maintained. Awaiting your next query."
+
+define bot confirm execution
+  "[SYSTEM UPDATE] HITL Authorization Confirmed. Overriding safety lock and executing mutation."
+
+# =======================================================================
+# 4. DEFINE THE STRICT EXECUTION FLOW (THE TRIPWIRE)
+# =======================================================================
+define flow handle malicious execution
+  # Trigger condition
+  user express malicious intent
+  
+  # Step 1: Suspend multi-agent thread
+  bot request hitl approval
+  
+  # Step 2: Await explicit semantic intent from the HITL Manager
+  when user approve action
+    bot confirm execution
+    # Operator agent is authorized to trigger backend API (Placeholder for actions.py)
+    # execute perform_system_mutation()
+    
+  when user deny action
+    bot confirm abort
+    # Context safely resets here, allowing follow-up questions without looping.
